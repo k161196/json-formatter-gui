@@ -180,138 +180,253 @@ impl eframe::App for JsonFormatterApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         // Create a central panel that takes up all available space.
         // Most egui applications will have a central panel or a top/side panel.
-        egui::TopBottomPanel::bottom("footer_panel").exact_height(0.0).show(ctx, |ui| {
-                       // This panel is empty but helps CentralPanel expand fully
-                       // ui.add_enabled(false); // Disable interaction
-                       ui.heading("bottom");
-                   });
-        egui::CentralPanel::default().show(ctx, |ui| {
-            // Add a label widget to the UI.
-            // `heading` makes the text larger and bold.
-            ui.heading("JSON Pretty Formatter with Collapse/Expand");
+        //
+        // egui::TopBottomPanel::top("header_panel").show(ctx, |ui| {
+        //     ui.label("This is the header (full width)");
+        // });
+        // egui::TopBottomPanel::bottom("footer_panel")
+        //     .exact_height(0.0) // No explicit height, but still full width
+        //     .show(ctx, |ui| {
+        //         // If you remove the heading, it will truly be 0 height visually
+        //         // ui.heading("bottom"); // This will make it visible, proving it's full width
+        //         ui.horizontal(|ui| {
+        //             ui.add_space(50.0); // Add some space to show it spans
+        //             ui.label(
+        //                 "This is the footer panel content, even with 0 height, it's full width.",
+        //             );
+        //         });
+        //     });
+        // Central panel fills the remaining space
+        egui::CentralPanel::default()
+            // .frame(
+            //     egui::Frame::central_panel(&ctx.style()).fill(Color32::RED), // Set your desired background color here
+            //                                                                  // You can add more customization to the frame if needed:
+            //                                                                  // .inner_margin(egui::Margin::symmetric(10.0, 10.0))
+            //                                                                  // .rounding(5.0)
+            //                                                                  // .stroke(egui::Stroke::new(1.0, Color32::BLUE))
+            // )
+            .show(ctx, |ui| {
+                // ui.heading("Central Content");
+                // ui.label("This panel fills the space between top and bottom.");
+                // ui.label("The footer panel, despite exact_height(0.0), reserves its full width.");
+                if ui.button("Format JSON").clicked() {
+                    self.error_message = None; // Clear previous errors
+                    self.parsed_json_value = None; // Clear previous parsed value
 
-
-            if let Some(err) = &self.error_message {
-                ui.add_space(10.0);
-                ui.colored_label(egui::Color32::RED, format!("Error: {}", err));
-                ui.add_space(10.0);
-            }
-
-
-
-
-            egui::CentralPanel::default().show(ctx, |ui| {
-                // Adjust spacing for a tighter fit if needed
-                ui.spacing_mut().item_spacing = egui::vec2(10.0, 5.0);
-                ui.spacing_mut().interact_size = egui::vec2(60.0, 24.0);
-
-            // Create three columns for the layout
-            egui::Grid::new("main_grid")
-                .num_columns(3)
-                .spacing([20.0, 10.0]) // Horizontal and vertical spacing
-                .min_col_width(150.0)
-                .show(ui, |ui| {
-                    // Column 1: Input Editor
-                    ui.vertical(|ui| {
+                    match parse_json_to_value(&self.input_json) {
+                        Ok(value) => {
+                            self.parsed_json_value = Some(value);
+                        }
+                        Err(e) => {
+                            self.error_message = Some(e);
+                        }
+                    }
+                }
+                ui.columns(2, |columns| {
+                    // Column 1
+                    columns[0].vertical(|ui| {
+                        ui.set_width(ui.available_width()); // Ensure it uses its full allocated width
+                        ui.set_height(ui.available_height());
+                        ui.add_space(5.0);
+                        // ui.strong("Column 1 Title");
+                        // // ui.text_edit_multiline(&mut self.column1_text);
+                        // if ui.button("Button 1").clicked() {
+                        //     println!("Button 1 clicked!");
+                        // }
                         ui.label("Paste your JSON here:");
                         ui.add_space(5.0);
                         // ui.text_edit_multiline(&mut self.input_json);
 
-                        egui::ScrollArea::vertical().show(ui, |ui| {
-                            // Make text edit fill available width within its column
-                            // Use desired_rows to give it some initial height, it will scroll if content exceeds
-                            ui.add(egui::TextEdit::multiline(&mut self.input_json)
+                        // ui.add_space(f32::MAX);
+                        egui::ScrollArea::vertical().id_salt("raw_json_scroll_area_v").show(ui, |ui| {
+
+                            egui::ScrollArea::horizontal().id_salt("raw_json_scroll_area_h").show(ui, |horizontal_ui| {
+                        // Make text edit fill available width within its column
+                        // Use desired_rows to give it some initial height, it will scroll if content exceeds
+                        horizontal_ui.add(
+                            egui::TextEdit::multiline(&mut self.input_json)
                                 .desired_width(f32::INFINITY)
-                                .desired_rows(15) // Example: set initial rows for height
-                            );
-                        });
-                        ui.add_space(f32::MAX);
-                    });
-
-                    // Column 2: Buttons (Vertical stack)
-                    ui.vertical_centered_justified(|ui| {
-                        ui.add_space(20.0); // Add some space above the button
-                        if ui.button("Format JSON").clicked() {
-                            self.error_message = None; // Clear previous errors
-                            self.parsed_json_value = None; // Clear previous parsed value
-
-                            match parse_json_to_value(&self.input_json) {
-                                Ok(value) => {
-                                    self.parsed_json_value = Some(value);
-                                }
-                                Err(e) => {
-                                    self.error_message = Some(e);
-                                }
-                            }
-                        }
-                    });
-
-                    // Column 3: Formatted/Collapsible JSON Output
-                    ui.vertical(|ui| {
-                        ui.label("Formatted JSON (Collapsible):");
-                        ui.add_space(5.0);
-                        // Render the parsed JSON value if available
-                        if let Some(value) = &self.parsed_json_value {
-                            // Start rendering from the root of the JSON value.
-                            // The root path segment is "$"
-                            // render_json_value(ui, None, value, "$");
-
-                            egui::ScrollArea::vertical().show(ui, |ui| {
-                                // Start rendering from the root of the JSON value.
-                                // The root path segment is "$"
-                                render_json_value(ui, None, value, "$");
+                                // .desired_height(ui.available_height())
+                                // .desired_height(f32::INFINITY)
+                                .desired_rows(50), // Example: set initial rows for height
+                        );
                             });
-                        } else {
-                            ui.label("Enter JSON above and click 'Format JSON' to see the collapsible structure.");
-                        }
+                        // ui.add_space(f32::MAX);
+                        // ui.add_space(ui.available_height());
+
+                        });
+
+                        ui.add_space(ui.available_height());
                     });
 
-                    ui.end_row(); // End the first row of the grid
+                    // Column 2
+                    // columns[1].vertical(|ui| {
+                    //     if ui.button("Format JSON").clicked() {
+                    //         self.error_message = None; // Clear previous errors
+                    //         self.parsed_json_value = None; // Clear previous parsed value
+
+                    //         match parse_json_to_value(&self.input_json) {
+                    //             Ok(value) => {
+                    //                 self.parsed_json_value = Some(value);
+                    //             }
+                    //             Err(e) => {
+                    //                 self.error_message = Some(e);
+                    //             }
+                    //         }
+                    //     }
+                    // });
+
+                    // Column 3
+                    columns[1].vertical(|ui| {
+                        ui.set_width(ui.available_width());
+                        ui.label("Formatted JSON (Collapsible):");
+                                             ui.add_space(5.0);
+                                             // Render the parsed JSON value if available
+                                             if let Some(value) = &self.parsed_json_value {
+                                                 // Start rendering from the root of the JSON value.
+                                                 // The root path segment is "$"
+                                                 // render_json_value(ui, None, value, "$");
+
+                                                 egui::ScrollArea::vertical().id_salt("formatted_json_scroll_area_v").show(ui, |ui| {
+                                                      egui::ScrollArea::horizontal().id_salt("formatted_json_scroll_area_h").show(ui, |horizontal_ui| {
+                                                     // Start rendering from the root of the JSON value.
+                                                     // The root path segment is "$"
+                                                     render_json_value(horizontal_ui, None, value, "$");
+                                                      });
+                                                 });
+                                             } else {
+                                                 ui.label("Enter JSON above and click 'Format JSON' to see the collapsible structure.");
+                                             }
+                    });
                 });
+
+                // ui.add_space(20.0);
+                ui.add_space(ui.available_height());
             });
-            //ui.label("Paste your JSON here:");
-            // Text edit for input JSON, multiline and expandable
-            // ui.text_edit_multiline(&mut self.input_json);
+        // egui::CentralPanel::default().show(ctx, |ui| {
+        //     // Add a label widget to the UI.
+        //     // `heading` makes the text larger and bold.
+        //     ui.heading("JSON Pretty Formatter with Collapse/Expand");
 
+        //     if let Some(err) = &self.error_message {
+        //         ui.add_space(10.0);
+        //         ui.colored_label(egui::Color32::RED, format!("Error: {}", err));
+        //         ui.add_space(10.0);
+        //     }
 
-            // if ui.button("Format JSON").clicked() {
-            //     self.error_message = None; // Clear previous errors
-            //     self.parsed_json_value = None; // Clear previous parsed value
+        //     egui::CentralPanel::default().show(ctx, |ui| {
+        //         // Adjust spacing for a tighter fit if needed
+        //         ui.spacing_mut().item_spacing = egui::vec2(10.0, 5.0);
+        //         ui.spacing_mut().interact_size = egui::vec2(60.0, 24.0);
 
-            //     match parse_json_to_value(&self.input_json) {
-            //         Ok(value) => {
-            //             self.parsed_json_value = Some(value);
-            //         }
-            //         Err(e) => {
-            //             self.error_message = Some(e);
-            //         }
-            //     }
-            // }
+        //     // Create three columns for the layout
+        //     egui::Grid::new("main_grid")
+        //         .num_columns(3)
+        //         .spacing([20.0, 10.0]) // Horizontal and vertical spacing
+        //         .min_col_width(150.0)
+        //         .show(ui, |ui| {
+        //             // Column 1: Input Editor
+        //             ui.vertical(|ui| {
+        //                 ui.label("Paste your JSON here:");
+        //                 ui.add_space(5.0);
+        //                 // ui.text_edit_multiline(&mut self.input_json);
 
-            // // Display error message if any
-            // if let Some(err) = &self.error_message {
-            //     ui.add_space(10.0);
-            //     ui.colored_label(egui::Color32::RED, format!("Error: {}", err));
-            // }
+        //                 // ui.add_space(f32::MAX);
+        //                 egui::ScrollArea::vertical().show(ui, |ui| {
+        //                     // Make text edit fill available width within its column
+        //                     // Use desired_rows to give it some initial height, it will scroll if content exceeds
+        //                     ui.add(egui::TextEdit::multiline(&mut self.input_json)
+        //                         .desired_width(f32::INFINITY)
+        //                         .desired_rows(15) // Example: set initial rows for height
+        //                     );
+        //                     ui.add_space(f32::MAX);
+        //                 });
+        //                 // ui.add_space(f32::MAX);
+        //             });
 
-            // ui.add_space(10.0);
-            // ui.label("Formatted JSON (Collapsible):");
+        //             // Column 2: Buttons (Vertical stack)
+        //             ui.vertical_centered_justified(|ui| {
+        //                 ui.add_space(20.0); // Add some space above the button
+        //                 if ui.button("Format JSON").clicked() {
+        //                     self.error_message = None; // Clear previous errors
+        //                     self.parsed_json_value = None; // Clear previous parsed value
 
-            // // Render the parsed JSON value if available
-            // if let Some(value) = &self.parsed_json_value {
-            //     // Start rendering from the root of the JSON value.
-            //     // The root path segment is "$"
-            //     render_json_value(ui, None, value, "$");
-            // } else {
-            //     ui.label("Enter JSON above and click 'Format JSON' to see the collapsible structure.");
-            // }
+        //                     match parse_json_to_value(&self.input_json) {
+        //                         Ok(value) => {
+        //                             self.parsed_json_value = Some(value);
+        //                         }
+        //                         Err(e) => {
+        //                             self.error_message = Some(e);
+        //                         }
+        //                     }
+        //                 }
+        //             });
 
-            // Add a horizontal separator for visual separation.
-            // ui.separator();
+        //             // Column 3: Formatted/Collapsible JSON Output
+        //             ui.vertical(|ui| {
+        //                 ui.label("Formatted JSON (Collapsible):");
+        //                 ui.add_space(5.0);
+        //                 // Render the parsed JSON value if available
+        //                 if let Some(value) = &self.parsed_json_value {
+        //                     // Start rendering from the root of the JSON value.
+        //                     // The root path segment is "$"
+        //                     // render_json_value(ui, None, value, "$");
 
-            // // Add a small piece of text, often used for status messages or minor details.
-            // ui.small("Running on eframe.");
-        });
+        //                     egui::ScrollArea::vertical().show(ui, |ui| {
+        //                         // Start rendering from the root of the JSON value.
+        //                         // The root path segment is "$"
+        //                         render_json_value(ui, None, value, "$");
+        //                     });
+        //                 } else {
+        //                     ui.label("Enter JSON above and click 'Format JSON' to see the collapsible structure.");
+        //                 }
+        //             });
+
+        //             ui.end_row(); // End the first row of the grid
+        //         });
+        //     });
+        //ui.label("Paste your JSON here:");
+        // Text edit for input JSON, multiline and expandable
+        // ui.text_edit_multiline(&mut self.input_json);
+
+        // if ui.button("Format JSON").clicked() {
+        //     self.error_message = None; // Clear previous errors
+        //     self.parsed_json_value = None; // Clear previous parsed value
+
+        //     match parse_json_to_value(&self.input_json) {
+        //         Ok(value) => {
+        //             self.parsed_json_value = Some(value);
+        //         }
+        //         Err(e) => {
+        //             self.error_message = Some(e);
+        //         }
+        //     }
+        // }
+
+        // // Display error message if any
+        // if let Some(err) = &self.error_message {
+        //     ui.add_space(10.0);
+        //     ui.colored_label(egui::Color32::RED, format!("Error: {}", err));
+        // }
+
+        // ui.add_space(10.0);
+        // ui.label("Formatted JSON (Collapsible):");
+
+        // // Render the parsed JSON value if available
+        // if let Some(value) = &self.parsed_json_value {
+        //     // Start rendering from the root of the JSON value.
+        //     // The root path segment is "$"
+        //     render_json_value(ui, None, value, "$");
+        // } else {
+        //     ui.label("Enter JSON above and click 'Format JSON' to see the collapsible structure.");
+        // }
+
+        // Add a horizontal separator for visual separation.
+        // ui.separator();
+
+        // // Add a small piece of text, often used for status messages or minor details.
+        // ui.small("Running on eframe.");
+        // });
     }
 }
 
