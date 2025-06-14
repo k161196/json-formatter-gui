@@ -1,7 +1,10 @@
 use eframe::egui;
 use serde_json::{self, Value};
 
+use egui::text::{LayoutJob, TextFormat};
 use egui::{CollapsingHeader, Color32, RichText};
+use egui::{FontFamily, TextStyle};
+use std::ops::Range;
 /// Parses a JSON string into a serde_json::Value.
 /// Returns Ok(Value) on success, or Err(error_message) on failure.
 // fn parse_json_to_value(json_string: &str) -> Result<Value, String> {
@@ -41,6 +44,97 @@ use egui::{CollapsingHeader, Color32, RichText};
 //
 //
 //
+//
+
+fn create_highlighted_layout_sections(
+    ui: &egui::Ui,
+    full_text_content: &str, // Renamed to clearly indicate it's the full content
+    search_query: &str,
+    default_text_color: Color32,
+    is_strong: bool,
+) -> (String, Vec<egui::text::LayoutSection>) {
+    // Returns a tuple: (full_text, sections)
+    let mut sections = Vec::new();
+    let mut current_text_byte_offset = 0; // Tracks byte offset for Ranges
+
+    let mut base_font_id = TextStyle::Body.resolve(ui.style());
+
+    // if is_strong {
+    //     base_font_id.weight = FontWeight::Bold;
+    // }
+
+    let default_format = TextFormat {
+        font_id: base_font_id.clone(),
+        extra_letter_spacing: 0.0, // Add this line
+        line_height: None,         // Add this line
+        color: default_text_color,
+        italics: false,
+        strikethrough: Default::default(), // Use Default for Stroke
+        underline: Default::default(),     // Use Default for Stroke
+        background: Color32::TRANSPARENT,
+        valign: egui::Align::Center,
+    };
+
+    let highlighted_format = TextFormat {
+        font_id: base_font_id.clone(),
+        extra_letter_spacing: 0.0, // Add this line
+        line_height: None,         // Add this line
+        color: Color32::BLACK,
+        background: Color32::from_rgb(255, 255, 0),
+        italics: false,
+        strikethrough: Default::default(),
+        underline: Default::default(),
+        valign: egui::Align::Center,
+    };
+
+    if search_query.is_empty() {
+        // If no search query, the entire text is one section with default format
+        sections.push(egui::text::LayoutSection {
+            leading_space: 0.0,
+            byte_range: 0..full_text_content.len(),
+            format: default_format,
+        });
+        return (full_text_content.to_string(), sections);
+    }
+
+    let lower_full_text = full_text_content.to_lowercase();
+    let lower_search_query = search_query.to_lowercase();
+    let mut last_end_byte = 0;
+
+    for (start_byte, matched_str) in lower_full_text.match_indices(&lower_search_query) {
+        let matched_len_bytes = matched_str.len(); // Get the byte length of the matched string slice
+
+        // Add the part before the match (if any)
+        if start_byte > last_end_byte {
+            sections.push(egui::text::LayoutSection {
+                leading_space: 0.0,
+                byte_range: last_end_byte..start_byte,
+                format: default_format.clone(),
+            });
+        }
+
+        // Add the matched part with highlight
+        sections.push(egui::text::LayoutSection {
+            leading_space: 0.0,
+            byte_range: start_byte..(start_byte + matched_len_bytes), // Use the byte length here
+            format: highlighted_format.clone(),
+        });
+
+        last_end_byte = start_byte + matched_len_bytes;
+    }
+
+    // Add the remaining part after the last match (if any)
+    if last_end_byte < full_text_content.len() {
+        sections.push(egui::text::LayoutSection {
+            leading_space: 0.0,
+            byte_range: last_end_byte..full_text_content.len(),
+            format: default_format,
+        });
+    }
+
+    (full_text_content.to_string(), sections)
+}
+
 fn parse_json_to_value(json_string: &str) -> Result<Value, String> {
     // Attempt to parse the input string into a serde_json::Value.
     // This will validate the JSON.
@@ -56,15 +150,45 @@ fn parse_json_to_value(json_string: &str) -> Result<Value, String> {
     }
 }
 
-fn render_json_value(ui: &mut egui::Ui, key_name: Option<&str>, value: &Value, path_segment: &str) {
+fn render_json_value(
+    ui: &mut egui::Ui,
+    key_name: Option<&str>,
+    value: &Value,
+    path_segment: &str,
+    search_query: &str,
+) {
     ui.horizontal(|ui| {
+        let mut key_text = String::new();
         // Display the key name if provided (for object fields)
         if let Some(key) = key_name {
-            ui.add(egui::Label::new(
-                RichText::new(format!("\"{}\":", key))
-                    .strong()
-                    .color(Color32::LIGHT_BLUE),
-            ));
+            // key_text = format!("\"{}\":", key);
+            // let mut rich_key_text = RichText::new(key_text.clone())
+            //     .strong()
+            //     .color(Color32::LIGHT_BLUE);
+            // if !search_query.is_empty() && key.to_lowercase().contains(&search_query.to_lowercase())
+            // {
+            //     rich_key_text = rich_key_text.color(Color32::BLACK); // Yellow highlight
+            //     rich_key_text = rich_key_text.background_color(Color32::YELLOW); // Yellow highlight
+            // }
+            // ui.add(egui::Label::new(rich_key_text));
+            // ui.add_space(5.0);
+            let key_display = format!("\"{}\":", key);
+            // Get the full text and its sections
+            let (full_text, layout_sections) = create_highlighted_layout_sections(
+                ui,
+                &key_display,
+                search_query,
+                Color32::LIGHT_BLUE,
+                true,
+            );
+            // Create LayoutJob from the full text and the sections
+            let layout_job = LayoutJob {
+                text: full_text,           // The entire string for the job
+                sections: layout_sections, // The formatting sections
+                // wrap: true, // Typically want wrapping for labels
+                ..Default::default()
+            };
+            ui.add(egui::Label::new(egui::WidgetText::LayoutJob(layout_job)));
             ui.add_space(5.0);
         }
 
@@ -88,6 +212,7 @@ fn render_json_value(ui: &mut egui::Ui, key_name: Option<&str>, value: &Value, p
                                     Some(key),
                                     val,
                                     &format!("{}.{}", path_segment, key),
+                                    search_query,
                                 );
                             }
                         });
@@ -114,6 +239,7 @@ fn render_json_value(ui: &mut egui::Ui, key_name: Option<&str>, value: &Value, p
                                     None,
                                     val,
                                     &format!("{}[{}]", path_segment, index),
+                                    search_query,
                                 );
                             }
                         });
@@ -121,16 +247,112 @@ fn render_json_value(ui: &mut egui::Ui, key_name: Option<&str>, value: &Value, p
             }
             // Handle primitive JSON types
             Value::String(s) => {
-                ui.label(RichText::new(format!("\"{}\"", s)).color(Color32::GREEN));
+                // key_text = format!("\"{}\"", s);
+                // let mut rich_key_text = RichText::new(key_text.clone())
+                //     .strong()
+                //     .color(Color32::GREEN);
+                // if !search_query.is_empty() && s.to_lowercase().contains(&search_query.to_lowercase())
+                // {
+                //     rich_key_text = rich_key_text.color(Color32::BLACK); // Yellow highlight
+                //     rich_key_text = rich_key_text.background_color(Color32::YELLOW); // Yellow highlight
+                // }
+                // ui.add(egui::Label::new(rich_key_text));
+                // ui.add_space(5.0);
+                let (full_text, layout_sections) = create_highlighted_layout_sections(
+                    ui,
+                    &format!("\"{}\"", s),
+                    search_query,
+                    Color32::GREEN,
+                    false,
+                );
+                let layout_job = LayoutJob {
+                    text: full_text,
+                    sections: layout_sections,
+                    // wrap: true,
+                    ..Default::default()
+                };
+                ui.label(egui::WidgetText::LayoutJob(layout_job));
             }
             Value::Number(n) => {
-                ui.label(RichText::new(n.to_string()).color(Color32::YELLOW));
+                // let num_str = n.to_string(); // Immutable copy for search check
+                // let mut rich_key_text = RichText::new(num_str.clone())
+                //     .strong()
+                //     .color(Color32::YELLOW);
+                // if !search_query.is_empty() && num_str.to_lowercase().contains(&search_query.to_lowercase())
+                // {
+                //     rich_key_text = rich_key_text.color(Color32::BLACK); // Yellow highlight
+                //     rich_key_text = rich_key_text.background_color(Color32::YELLOW); // Yellow highlight
+                // }
+                // ui.add(egui::Label::new(rich_key_text));
+                // ui.add_space(5.0);
+                let (full_text, layout_sections) = create_highlighted_layout_sections(
+                    ui,
+                    &n.to_string(),
+                    search_query,
+                    Color32::YELLOW,
+                    false,
+                );
+                let layout_job = LayoutJob {
+                    text: full_text,
+                    sections: layout_sections,
+                    // wrap: true,
+                    ..Default::default()
+                };
+                ui.label(egui::WidgetText::LayoutJob(layout_job));
             }
             Value::Bool(b) => {
-                ui.label(RichText::new(b.to_string()).color(Color32::KHAKI));
+                // let bool_str = b.to_string(); // Immutable copy for search check
+                // let mut rich_key_text = RichText::new(bool_str.clone())
+                //     .strong()
+                //     .color(Color32::KHAKI);
+                // if !search_query.is_empty() && bool_str.to_lowercase().contains(&search_query.to_lowercase())
+                // {
+                //     rich_key_text = rich_key_text.color(Color32::BLACK); // Yellow highlight
+                //     rich_key_text = rich_key_text.background_color(Color32::YELLOW); // Yellow highlight
+                // }
+                // ui.add(egui::Label::new(rich_key_text));
+                // ui.add_space(5.0);
+                let (full_text, layout_sections) = create_highlighted_layout_sections(
+                    ui,
+                    &b.to_string(),
+                    search_query,
+                    Color32::KHAKI,
+                    false,
+                );
+                let layout_job = LayoutJob {
+                    text: full_text,
+                    sections: layout_sections,
+                    // wrap: true,
+                    ..Default::default()
+                };
+                ui.label(egui::WidgetText::LayoutJob(layout_job));
             }
             Value::Null => {
-                ui.label(RichText::new("null").color(Color32::DARK_GRAY));
+                // let null_str = "null".to_string(); // Immutable copy for search check
+                // let mut rich_key_text = RichText::new(null_str.clone())
+                //     .strong()
+                //     .color(Color32::DARK_GRAY);
+                // if !search_query.is_empty() && null_str.to_lowercase().contains(&search_query.to_lowercase())
+                // {
+                //     rich_key_text = rich_key_text.color(Color32::BLACK); // Yellow highlight
+                //     rich_key_text = rich_key_text.background_color(Color32::YELLOW); // Yellow highlight
+                // }
+                // ui.add(egui::Label::new(rich_key_text));
+                // ui.add_space(5.0);
+                let (full_text, layout_sections) = create_highlighted_layout_sections(
+                    ui,
+                    "null",
+                    search_query,
+                    Color32::DARK_GRAY,
+                    false,
+                );
+                let layout_job = LayoutJob {
+                    text: full_text,
+                    sections: layout_sections,
+                    // wrap: true,
+                    ..Default::default()
+                };
+                ui.label(egui::WidgetText::LayoutJob(layout_job));
             }
         }
     });
@@ -165,6 +387,7 @@ struct JsonFormatterApp {
     // Store the parsed JSON Value directly for structured display
     parsed_json_value: Option<Value>,
     error_message: Option<String>,
+    search_query: String,
 }
 
 // Implement the `eframe::App` trait for our `MyApp` struct.
@@ -266,13 +489,23 @@ impl eframe::App for JsonFormatterApp {
 
                     columns[1].vertical(|ui| {
                         ui.set_width(ui.available_width());
+                        ui.horizontal(|ui| { // New: Horizontal layout for search input and button
+                                                   ui.label("Search:");
+                                                   ui.text_edit_singleline(&mut self.search_query);
+                                                   // No explicit "Search" button needed, as typing updates search_query
+                                                   // and the view will re-render automatically.
+                                                   if ui.button("Clear Search").clicked() {
+                                                       self.search_query.clear();
+                                                   }
+                                               });
+                                               ui.add_space(5.0);
                         ui.label("Formatted JSON (Collapsible):");
                                              ui.add_space(5.0);
                                              // Render the parsed JSON value if available
                                              if let Some(value) = &self.parsed_json_value {
                                                  egui::ScrollArea::vertical().id_salt("formatted_json_scroll_area_v").show(ui, |ui| {
                                                       egui::ScrollArea::horizontal().id_salt("formatted_json_scroll_area_h").show(ui, |horizontal_ui| {
-                                                     render_json_value(horizontal_ui, None, value, "$");
+                                                     render_json_value(horizontal_ui, None, value, "$",&self.search_query);
                                                       });
                                                  });
                                              } else {
