@@ -1,9 +1,11 @@
 use eframe::egui;
 use serde_json::{self, Value};
 
+use egui::TextStyle;
 use egui::text::{LayoutJob, TextFormat};
-use egui::{CollapsingHeader, Color32};
-use egui::{ TextStyle};
+use egui::{CollapsingHeader, Color32, RichText};
+use std::process::{Command, Stdio}; // For process command
+
 fn create_highlighted_layout_sections(
     ui: &egui::Ui,
     full_text_content: &str, // Renamed to clearly indicate it's the full content
@@ -18,7 +20,7 @@ fn create_highlighted_layout_sections(
     let base_font_id = TextStyle::Body.resolve(ui.style());
 
     if is_strong {
-    //     base_font_id.weight = FontWeight::Bold;
+        //     base_font_id.weight = FontWeight::Bold;
     }
 
     let default_format = TextFormat {
@@ -335,6 +337,43 @@ fn render_json_value(
 //         Box::new(|_cc| Ok(Box::new(MyApp::default()))), // Initialize our MyApp.
 //     )
 // }
+//
+
+// JQ Execution Function
+fn execute_jq_query(json_input: &str, query: &str) -> Result<String, String> {
+    use std::io::Write;
+    use std::process::{Command, Stdio}; // Ensure Stdio is in scope
+
+    let mut child = Command::new("jq")
+        .arg(query)
+        // Corrected lines: Use Stdio::piped() instead of Stdio::Piped
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| {
+            format!(
+                "Failed to spawn jq process. Is jq installed and in PATH? {}",
+                e
+            )
+        })?;
+
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin
+            .write_all(json_input.as_bytes())
+            .map_err(|e| format!("Failed to write to jq stdin: {}", e))?;
+    }
+
+    let output = child
+        .wait_with_output()
+        .map_err(|e| format!("Failed to wait for jq process: {}", e))?;
+
+    if output.status.success() {
+        Ok(String::from_utf8_lossy(&output.stdout).to_string())
+    } else {
+        Err(String::from_utf8_lossy(&output.stderr).to_string())
+    }
+}
 
 // Define our application struct.
 // We use `Default` trait to easily create an instance with default values.
@@ -346,6 +385,11 @@ struct JsonFormatterApp {
     parsed_json_value: Option<Value>,
     error_message: Option<String>,
     search_query: String,
+
+    // New fields for JQ integration:
+    jq_query_input: String,    // The text field for user's JQ query
+    jq_output: Option<String>, // To store the result of the JQ operation
+    jq_error: Option<String>,  // To store any errors from JQ
 }
 
 // Implement the `eframe::App` trait for our `MyApp` struct.
@@ -456,8 +500,79 @@ impl eframe::App for JsonFormatterApp {
                                                        self.search_query.clear();
                                                    }
                                                });
+
+                        // JQ Section
+                                            ui.heading("JQ Query");
+                                            ui.horizontal(|ui| {
+                                                ui.label("JQ Filter:");
+                                                ui.text_edit_singleline(&mut self.jq_query_input);
+                                                    // .hint_text(".data[0].event_dates_id");
+                                                if ui.button("Run JQ").clicked() {
+                                                    self.jq_output = None;
+                                                    self.jq_error = None;
+
+                                                    if self.input_json.is_empty() {
+                                                        self.jq_error = Some("No JSON input provided to run JQ against.".to_string());
+                                                    } else if self.jq_query_input.is_empty() {
+                                                        self.jq_error = Some("JQ query field cannot be empty.".to_string());
+                                                    } else {
+                                                        match execute_jq_query(&self.input_json, &self.jq_query_input) {
+                                                            Ok(output) => {
+                                                                // self.jq_output = Some(output);
+
+                                                                match parse_json_to_value(&output) {
+                                                                                        Ok(value) => {
+
+                                                                                            // self.parsed_json_value = Some(value);
+                                                                                            match serde_json::to_string_pretty(&value) {
+                                                                                                                                Ok(pretty_json_string) => {
+                                                                                                                                    // self.input_json = pretty_json_string; // Update the input area
+                                                                                                                                    self.parsed_json_value = Some(value); // Keep the parsed value for the collapsible view
+                                                                                                                                }
+                                                                                                                                Err(e) => {
+                                                                                                                                    self.error_message = Some(format!("Error pretty-printing JSON: {}", e));
+                                                                                                                                }
+                                                                                                                            }
+                                                                                        }
+                                                                                        Err(e) => {
+                                                                                            self.error_message = Some(e);
+                                                                                        }
+                                                                                    }
+
+                                                            }
+                                                            Err(e) => {
+                                                                // self.jq_error = Some(e);
+                                                                 self.error_message = Some(format!("Error : {}", e));
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                                if ui.button("Clear JQ Query").clicked() {
+                                                    self.jq_query_input.clear();
+                                                    match parse_json_to_value(&self.input_json) {
+                                                                            Ok(value) => {
+
+                                                                                // self.parsed_json_value = Some(value);
+                                                                                match serde_json::to_string_pretty(&value) {
+                                                                                                                    Ok(_pretty_json_string) => {
+                                                                                                                        // self.input_json = pretty_json_string; // Update the input area
+                                                                                                                        self.parsed_json_value = Some(value); // Keep the parsed value for the collapsible view
+                                                                                                                    }
+                                                                                                                    Err(e) => {
+                                                                                                                        self.error_message = Some(format!("Error pretty-printing JSON: {}", e));
+                                                                                                                    }
+                                                                                                                }
+                                                                            }
+                                                                            Err(e) => {
+                                                                                self.error_message = Some(e);
+                                                                            }
+                                                                        }
+                                                    // self.jq_output = None;
+                                                    // self.jq_error = None;
+                                                }
+                                            });
                                                ui.add_space(5.0);
-                        ui.label("Formatted JSON (Collapsible):");
+                                               ui.label("Formatted JSON (Collapsible):");
                                              ui.add_space(5.0);
                                              // Render the parsed JSON value if available
                                              if let Some(value) = &self.parsed_json_value {
@@ -469,6 +584,36 @@ impl eframe::App for JsonFormatterApp {
                                              } else {
                                                  ui.label("Enter JSON above and click 'Format JSON' to see the collapsible structure.");
                                              }
+                                             ui.separator(); // Visual separator
+
+
+                                                                 // Display JQ Output or Error in a CollapsingHeader
+                                                                 // if self.jq_output.is_some() || self.jq_error.is_some() {
+                                                                 //     CollapsingHeader::new(RichText::new("JQ Result").strong().color(Color32::WHITE))
+                                                                 //         .id_salt("jq_result_header")
+                                                                 //         .default_open(true) // Keep open if there's a result
+                                                                 //         .show(ui, |ui| {
+                                                                 //             ui.indent("jq_result_indent", |ui| {
+                                                                 //                 if let Some(output) = &self.jq_output {
+                                                                 //                     egui::ScrollArea::vertical().id_salt("jq_output_scroll_v").show(ui, |ui| {
+                                                                 //                         egui::ScrollArea::horizontal().id_salt("jq_output_scroll_h").show(ui, |ui| {
+                                                                 //                             // Display JQ output in a read-only multiline text edit
+                                                                 //                             ui.add(egui::TextEdit::multiline(&mut output.clone())
+                                                                 //                                 .desired_width(ui.available_width())
+                                                                 //                                 .desired_rows(10) // Give it some initial height
+                                                                 //                                 .font(TextStyle::Monospace)); // Use monospace for code/JSON
+                                                                 //                         });
+                                                                 //                     });
+                                                                 //                 } else if let Some(error) = &self.jq_error {
+                                                                 //                     ui.colored_label(Color32::RED, format!("Error: {}", error));
+                                                                 //                 }
+                                                                 //             });
+                                                                 //         });
+                                                                 // }
+
+                                                                 // ui.add_space(ui.available_height());
+
+
                     });
                 });
                 ui.add_space(ui.available_height());
