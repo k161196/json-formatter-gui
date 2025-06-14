@@ -3,7 +3,7 @@ use serde_json::{self, Value};
 
 use egui::TextStyle;
 use egui::text::{LayoutJob, TextFormat};
-use egui::{CollapsingHeader, Color32};
+use egui::{CollapsingHeader, Color32,Rounding,Ui,TextEdit};
 // use std::process::{Command, Stdio}; // For process command
 
 fn create_highlighted_layout_sections(
@@ -338,6 +338,101 @@ fn render_json_value(
 //     )
 // }
 //
+//
+fn json_highlighter(ui: &egui::Ui, text: &str) -> LayoutJob {
+    let mut job = LayoutJob::default();
+
+    let base_format = TextFormat {
+        color: ui.visuals().text_color(),
+        font_id: TextStyle::Monospace.resolve(ui.style()),
+        ..Default::default()
+    };
+
+    // Define colors for different JSON elements
+    let string_color = Color32::from_rgb(255, 150, 80);    // Orange-ish for strings
+    let number_color = Color32::from_rgb(150, 200, 255);   // Light blue for numbers
+    let boolean_color = Color32::from_rgb(150, 255, 150);  // Light green for booleans
+    let null_color = Color32::from_rgb(255, 150, 255);     // Pink/purple for null
+
+    let mut current_pos = 0;
+    let chars: Vec<char> = text.chars().collect();
+
+    while current_pos < chars.len() {
+        let mut appended = false;
+
+        // Try to match specific keywords first
+        if text[current_pos..].starts_with("true") {
+            job.append("true", 0.0, TextFormat { color: boolean_color, ..base_format.clone() });
+            current_pos += 4;
+            appended = true;
+        } else if text[current_pos..].starts_with("false") {
+            job.append("false", 0.0, TextFormat { color: boolean_color, ..base_format.clone() });
+            current_pos += 5;
+            appended = true;
+        } else if text[current_pos..].starts_with("null") {
+            job.append("null", 0.0, TextFormat { color: null_color, ..base_format.clone() });
+            current_pos += 4;
+            appended = true;
+        }
+        // Handle strings (very basic: assumes no escaped quotes inside)
+        else if chars[current_pos] == '"' {
+            let start_quote = current_pos;
+            current_pos += 1;
+            while current_pos < chars.len() && chars[current_pos] != '"' {
+                if chars[current_pos] == '\\' && current_pos + 1 < chars.len() {
+                    current_pos += 1;
+                }
+                current_pos += 1;
+            }
+            if current_pos < chars.len() && chars[current_pos] == '"' {
+                current_pos += 1; // Consume closing quote
+                let s = &text[start_quote..current_pos];
+                job.append(s, 0.0, TextFormat { color: string_color, ..base_format.clone() });
+                appended = true;
+            } else {
+                job.append(&text[start_quote..], 0.0, base_format.clone());
+                current_pos = text.len();
+                appended = true;
+            }
+        }
+        // Handle numbers
+        else if chars[current_pos].is_ascii_digit() || chars[current_pos] == '-' || chars[current_pos] == '+' {
+            let start_num = current_pos;
+            while current_pos < chars.len() && (chars[current_pos].is_ascii_digit() || chars[current_pos] == '.' || chars[current_pos] == '-' || chars[current_pos] == '+') {
+                current_pos += 1;
+            }
+            let n = &text[start_num..current_pos];
+            job.append(n, 0.0, TextFormat { color: number_color, ..base_format.clone() });
+            appended = true;
+        }
+
+        // If nothing specific matched, append character by character
+        if !appended {
+            let c = chars[current_pos];
+            job.append(&c.to_string(), 0.0, base_format.clone());
+            current_pos += 1;
+        }
+    }
+    job
+}
+
+
+fn calculate_desired_rows_from_available_height(ui: &mut Ui, available_height: f32) -> usize {
+    // Get the height of a single line of text for the default Body style
+    // TextEdit typically uses the Body text style by default.
+    let row_height = ui.text_style_height(&TextStyle::Body);
+
+    // Add some padding/spacing, as actual lines might have a bit more vertical space
+    // You might need to fine-tune this value based on your theme and desired look.
+    let effective_row_height = row_height + ui.spacing().item_spacing.y / 2.0; // Half of item_spacing as a common practice
+
+    // Calculate the number of rows
+    if effective_row_height > 0.0 {
+        (available_height / effective_row_height).floor() as usize
+    } else {
+        1 // Prevent division by zero, ensure at least one row
+    }
+}
 
 // JQ Execution Function
 fn execute_jq_query(json_input: &str, query: &str) -> Result<String, String> {
@@ -388,8 +483,8 @@ struct JsonFormatterApp {
 
     // New fields for JQ integration:
     jq_query_input: String,    // The text field for user's JQ query
-    jq_output: Option<String>, // To store the result of the JQ operation
-    jq_error: Option<String>,  // To store any errors from JQ
+    cached_layout_job: Option<LayoutJob>,
+        last_input_json: String,
 }
 
 // Implement the `eframe::App` trait for our `MyApp` struct.
@@ -473,14 +568,72 @@ impl eframe::App for JsonFormatterApp {
 
                         ui.label("Paste your JSON here:");
                         ui.add_space(5.0);
+                        let available_height = ui.available_height(); // Or ui.available_rect_before_wrap().height()
+
+                                                         // Calculate the desired number of rows
+                        let calculated_rows = calculate_desired_rows_from_available_height(ui, available_height);
+
+                        let mut layouter = {
+                                        // We need to capture `self` (specifically, its mutable parts) here.
+                                        // We are creating a closure that can mutate `self.cached_layout_job`
+                                        // and `self.last_input_json`, and read `self.input_json`.
+                                        // The `move` keyword ensures that `layouter` takes ownership of these values,
+                                        // but since we're passing `&mut self` into `update`, we can't `move self` directly.
+                                        // Instead, we capture mutable references to the fields needed by the layouter.
+                                        // This means the lifetime of `layouter` is tied to the lifetime of `&mut self`.
+
+                                        // To solve the borrow conflict:
+                                        // We pass the string to the layouter (which is `TextEdit`'s content)
+                                        // and we also need access to the cache, which belongs to `self`.
+                                        // The TextEdit::layouter expects FnMut, so the layouter can modify its captured state.
+
+                                        // The fix is to make sure the parts of self that layouter needs
+                                        // are distinct from the parts TextEdit needs for its value (&mut self.input_json).
+                                        //
+                                        // This pattern is tricky because TextEdit wants a FnMut.
+                                        // A common pattern is to make the layouter a method on `self` or a function
+                                        // that takes the required mutable references.
+
+                                        // Let's create a *helper function* for the layouter logic
+                                        // to avoid complex lifetime issues with nested closures capturing self.
+                                        // This function will take the mutable references it needs from `self`.
+                                        let input_json_ref = &self.input_json; // Immutable borrow for layouter to read
+                                        let last_input_json_ref = &mut self.last_input_json; // Mutable borrow for layouter to update
+                                        let cached_layout_job_ref = &mut self.cached_layout_job; // Mutable borrow for layouter to update
+
+                                        move |ui: &egui::Ui, string: &str, wrap_width: f32| {
+                                            // Check if input_json has changed relative to our last_input_json for caching
+                                            if string != *last_input_json_ref || cached_layout_job_ref.is_none() {
+                                                let new_job = json_highlighter(ui, string);
+                                                *cached_layout_job_ref = Some(new_job);
+                                                *last_input_json_ref = string.to_string(); // Update last seen string for the cache
+                                            }
+                                            let mut layout_job = cached_layout_job_ref.clone().unwrap_or_default();
+                                            layout_job.wrap.max_width = wrap_width;
+                                            ui.fonts(|f| f.layout_job(layout_job))
+                                        }
+                                    };
 
                         egui::ScrollArea::vertical().id_salt("raw_json_scroll_area_v").show(ui, |ui| {
 
                             egui::ScrollArea::horizontal().id_salt("raw_json_scroll_area_h").show(ui, |horizontal_ui| {
+
+
+
                         horizontal_ui.add(
+                            // egui::TextEdit::multiline(&mut self.input_json)
+                            //     .desired_width(f32::INFINITY)
+                            //     // .desired_rows(100) // Example: set initial rows for height
+                            //     .background_color(Color32::TRANSPARENT)
+                            //     .frame(true)
+                            //     .desired_rows(calculated_rows.max(50)),
                             egui::TextEdit::multiline(&mut self.input_json)
-                                .desired_width(f32::INFINITY)
-                                .desired_rows(50), // Example: set initial rows for height
+                                                    .desired_width(f32::INFINITY)
+                                                    .background_color(Color32::from_rgb(40,40,40))
+                                                    .frame(true)
+                                                    .desired_rows(calculated_rows.max(50))
+                                                    .layouter(&mut layouter)
+
                         );
                             });
                         });
@@ -508,13 +661,13 @@ impl eframe::App for JsonFormatterApp {
                                                 ui.text_edit_singleline(&mut self.jq_query_input);
                                                     // .hint_text(".data[0].event_dates_id");
                                                 if ui.button("Run").clicked() {
-                                                    self.jq_output = None;
-                                                    self.jq_error = None;
+                                                    // self.jq_output = None;
+                                                    // self.jq_error = None;
 
                                                     if self.input_json.is_empty() {
-                                                        self.jq_error = Some("No JSON input provided to run JQ against.".to_string());
+                                                        self.error_message = Some("No JSON input provided to run JQ against.".to_string());
                                                     } else if self.jq_query_input.is_empty() {
-                                                        self.jq_error = Some("JQ query field cannot be empty.".to_string());
+                                                        self.error_message = Some("JQ query field cannot be empty.".to_string());
                                                     } else {
                                                         match execute_jq_query(&self.input_json, &self.jq_query_input) {
                                                             Ok(output) => {
@@ -525,14 +678,14 @@ impl eframe::App for JsonFormatterApp {
 
                                                                                             // self.parsed_json_value = Some(value);
                                                                                             match serde_json::to_string_pretty(&value) {
-                                                                                                                                Ok(_pretty_json_string) => {
-                                                                                                                                    // self.input_json = pretty_json_string; // Update the input area
-                                                                                                                                    self.parsed_json_value = Some(value); // Keep the parsed value for the collapsible view
-                                                                                                                                }
-                                                                                                                                Err(e) => {
-                                                                                                                                    self.error_message = Some(format!("Error pretty-printing JSON: {}", e));
-                                                                                                                                }
-                                                                                                                            }
+                                                                                                Ok(_pretty_json_string) => {
+                                                                                                // self.input_json = pretty_json_string; // Update the input area
+                                                                                                self.parsed_json_value = Some(value); // Keep the parsed value for the collapsible view
+                                                                                                }
+                                                                                                Err(e) => {
+                                                                                                self.error_message = Some(format!("Error pretty-printing JSON: {}", e));
+                                                                                                }
+                                                                                            }
                                                                                         }
                                                                                         Err(e) => {
                                                                                             self.error_message = Some(e);
@@ -551,17 +704,16 @@ impl eframe::App for JsonFormatterApp {
                                                     self.jq_query_input.clear();
                                                     match parse_json_to_value(&self.input_json) {
                                                                             Ok(value) => {
-
                                                                                 // self.parsed_json_value = Some(value);
                                                                                 match serde_json::to_string_pretty(&value) {
-                                                                                                                    Ok(_pretty_json_string) => {
-                                                                                                                        // self.input_json = pretty_json_string; // Update the input area
-                                                                                                                        self.parsed_json_value = Some(value); // Keep the parsed value for the collapsible view
-                                                                                                                    }
-                                                                                                                    Err(e) => {
-                                                                                                                        self.error_message = Some(format!("Error pretty-printing JSON: {}", e));
-                                                                                                                    }
-                                                                                                                }
+                                                                                    Ok(_pretty_json_string) => {
+                                                                                        // self.input_json = pretty_json_string; // Update the input area
+                                                                                        self.parsed_json_value = Some(value); // Keep the parsed value for the collapsible view
+                                                                                    }
+                                                                                    Err(e) => {
+                                                                                        self.error_message = Some(format!("Error pretty-printing JSON: {}", e));
+                                                                                    }
+                                                                                }
                                                                             }
                                                                             Err(e) => {
                                                                                 self.error_message = Some(e);
