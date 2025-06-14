@@ -3,8 +3,8 @@ use serde_json::{self, Value};
 
 use egui::TextStyle;
 use egui::text::{LayoutJob, TextFormat};
-use egui::{CollapsingHeader, Color32, RichText};
-use std::process::{Command, Stdio}; // For process command
+use egui::{CollapsingHeader, Color32};
+// use std::process::{Command, Stdio}; // For process command
 
 fn create_highlighted_layout_sections(
     ui: &egui::Ui,
@@ -502,12 +502,12 @@ impl eframe::App for JsonFormatterApp {
                                                });
 
                         // JQ Section
-                                            ui.heading("JQ Query");
+                                            // ui.heading("JQ Query");
                                             ui.horizontal(|ui| {
                                                 ui.label("JQ Filter:");
                                                 ui.text_edit_singleline(&mut self.jq_query_input);
                                                     // .hint_text(".data[0].event_dates_id");
-                                                if ui.button("Run JQ").clicked() {
+                                                if ui.button("Run").clicked() {
                                                     self.jq_output = None;
                                                     self.jq_error = None;
 
@@ -525,7 +525,7 @@ impl eframe::App for JsonFormatterApp {
 
                                                                                             // self.parsed_json_value = Some(value);
                                                                                             match serde_json::to_string_pretty(&value) {
-                                                                                                                                Ok(pretty_json_string) => {
+                                                                                                                                Ok(_pretty_json_string) => {
                                                                                                                                     // self.input_json = pretty_json_string; // Update the input area
                                                                                                                                     self.parsed_json_value = Some(value); // Keep the parsed value for the collapsible view
                                                                                                                                 }
@@ -547,7 +547,7 @@ impl eframe::App for JsonFormatterApp {
                                                         }
                                                     }
                                                 }
-                                                if ui.button("Clear JQ Query").clicked() {
+                                                if ui.button("Clear").clicked() {
                                                     self.jq_query_input.clear();
                                                     match parse_json_to_value(&self.input_json) {
                                                                             Ok(value) => {
@@ -571,9 +571,6 @@ impl eframe::App for JsonFormatterApp {
                                                     // self.jq_error = None;
                                                 }
                                             });
-                                               ui.add_space(5.0);
-                                               ui.label("Formatted JSON (Collapsible):");
-                                             ui.add_space(5.0);
                                              // Render the parsed JSON value if available
                                              if let Some(value) = &self.parsed_json_value {
                                                  egui::ScrollArea::vertical().id_salt("formatted_json_scroll_area_v").show(ui, |ui| {
