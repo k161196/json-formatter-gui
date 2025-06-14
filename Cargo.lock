@@ -1545,7 +1545,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "json-formatter"
+name = "json-formatter-gui"
 version = "0.1.0"
 dependencies = [
  "eframe",
