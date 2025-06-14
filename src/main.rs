@@ -2,50 +2,8 @@ use eframe::egui;
 use serde_json::{self, Value};
 
 use egui::text::{LayoutJob, TextFormat};
-use egui::{CollapsingHeader, Color32, RichText};
-use egui::{FontFamily, TextStyle};
-use std::ops::Range;
-/// Parses a JSON string into a serde_json::Value.
-/// Returns Ok(Value) on success, or Err(error_message) on failure.
-// fn parse_json_to_value(json_string: &str) -> Result<Value, String> {
-//     // Attempt to parse the input string into a serde_json::Value.
-//     // This will validate the JSON.
-//     let parsed_json: Result<Value, serde_json::Error> = serde_json::from_str(json_string);
-
-//     match parsed_json {
-//         Ok(value) => Ok(value),
-//         Err(e) => {
-//             // If parsing fails, it means the input is not valid JSON.
-//             // Return an error message indicating the problem.
-//             Err(format!("Invalid JSON input: {}", e))
-//         }
-//     }
-// }
-
-// fn main() {
-//     let valid_json = r#"{"name": "Alice", "age": 30, "isStudent": false, "courses": ["Math", "Science"], "address": {"city": "New York", "zip": "10001"}}"#;
-//     let invalid_json = r#"{"name": "Bob", "age": 25,"isStudent": tru}"#;
-
-//     println!("--- Valid JSON Example (Parsing Only) ---");
-//     match parse_json_to_value(valid_json) {
-//         Ok(value) => println!("Parsed Value: {:?}", value),
-//         Err(e) => println!("Error: {}", e),
-//     }
-
-//     println!("\n--- Invalid JSON Example (Parsing Only) ---");
-//     match parse_json_to_value(invalid_json) {
-//         Ok(value) => println!("Parsed Value: {:?}", value),
-//         Err(e) => println!("Error: {}", e),
-//     }
-//     println!("Hello, world!");
-// }
-//
-//
-//
-//
-//
-//
-
+use egui::{CollapsingHeader, Color32};
+use egui::{ TextStyle};
 fn create_highlighted_layout_sections(
     ui: &egui::Ui,
     full_text_content: &str, // Renamed to clearly indicate it's the full content
@@ -55,13 +13,13 @@ fn create_highlighted_layout_sections(
 ) -> (String, Vec<egui::text::LayoutSection>) {
     // Returns a tuple: (full_text, sections)
     let mut sections = Vec::new();
-    let mut current_text_byte_offset = 0; // Tracks byte offset for Ranges
+    // let current_text_byte_offset = 0; // Tracks byte offset for Ranges
 
-    let mut base_font_id = TextStyle::Body.resolve(ui.style());
+    let base_font_id = TextStyle::Body.resolve(ui.style());
 
-    // if is_strong {
+    if is_strong {
     //     base_font_id.weight = FontWeight::Bold;
-    // }
+    }
 
     let default_format = TextFormat {
         font_id: base_font_id.clone(),
@@ -158,7 +116,7 @@ fn render_json_value(
     search_query: &str,
 ) {
     ui.horizontal(|ui| {
-        let mut key_text = String::new();
+        // let mut key_text = String::new();
         // Display the key name if provided (for object fields)
         if let Some(key) = key_name {
             // key_text = format!("\"{}\":", key);
