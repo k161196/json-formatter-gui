@@ -3,7 +3,7 @@ use serde_json::{self, Value};
 
 use egui::TextStyle;
 use egui::text::{LayoutJob, TextFormat};
-use egui::{CollapsingHeader, Color32,Rounding,Ui,TextEdit};
+use egui::{CollapsingHeader, Color32,Ui};
 // use std::process::{Command, Stdio}; // For process command
 
 fn create_highlighted_layout_sections(
@@ -439,6 +439,8 @@ fn execute_jq_query(json_input: &str, query: &str) -> Result<String, String> {
     use std::io::Write;
     use std::process::{Command, Stdio}; // Ensure Stdio is in scope
 
+   // println!("query, {}!",query);
+
     let mut child = Command::new("jq")
         .arg(query)
         // Corrected lines: Use Stdio::piped() instead of Stdio::Piped
@@ -520,7 +522,9 @@ impl eframe::App for JsonFormatterApp {
         egui::CentralPanel::default()
 
             .show(ctx, |ui| {
- ui.horizontal(|ui| {
+
+                ui.horizontal(|ui| {
+                ui.label("Enter JSON and click 'Format JSON' to see the collapsible structure.");
                 if ui.button("Format JSON").clicked() {
                     self.error_message = None; // Clear previous errors
                     self.parsed_json_value = None; // Clear previous parsed value
@@ -597,7 +601,7 @@ impl eframe::App for JsonFormatterApp {
                                         // Let's create a *helper function* for the layouter logic
                                         // to avoid complex lifetime issues with nested closures capturing self.
                                         // This function will take the mutable references it needs from `self`.
-                                        let input_json_ref = &self.input_json; // Immutable borrow for layouter to read
+                                        // let input_json_ref = &self.input_json; // Immutable borrow for layouter to read
                                         let last_input_json_ref = &mut self.last_input_json; // Mutable borrow for layouter to update
                                         let cached_layout_job_ref = &mut self.cached_layout_job; // Mutable borrow for layouter to update
 
@@ -672,6 +676,7 @@ impl eframe::App for JsonFormatterApp {
                                                         match execute_jq_query(&self.input_json, &self.jq_query_input) {
                                                             Ok(output) => {
                                                                 // self.jq_output = Some(output);
+                                                                // println!("output {}",output);
 
                                                                 match parse_json_to_value(&output) {
                                                                                         Ok(value) => {
@@ -731,8 +736,9 @@ impl eframe::App for JsonFormatterApp {
                                                       });
                                                  });
                                              } else {
-                                                 ui.label("Enter JSON above and click 'Format JSON' to see the collapsible structure.");
+                                                 // ui.label("Enter JSON and click 'Format JSON' to see the collapsible structure.");
                                              }
+                                             ui.label("JQ query must return valid JSON.");
                                              ui.separator(); // Visual separator
 
 
